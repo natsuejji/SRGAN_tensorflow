@@ -6,18 +6,18 @@ import random
 class DataGenerator:
     def __init__(self, 
                 batch_size, 
-                image_size = [448,256],
+                hr_image_size = 96,
                 dataset_basepath='E:\\dataset\\vimeo_septuplet', 
                 gau_std=1.6, 
                 gau_kernel=21,
-                scale = 2,
+                scale = 4,
                 mode=0):
         '''
             mode = 0 -> training
             mode = 1 -> testing
         '''
         self.batch_size = batch_size
-        self.image_size = image_size
+        self.hr_image_size = hr_image_size
         self.scale = scale
         self.dataset_basepath = dataset_basepath
         self.gaussian_blur_kernel = self.__gaussian_blur_filter(gau_std,gau_kernel)
@@ -31,6 +31,7 @@ class DataGenerator:
         
         with open(self.dataset_path, 'r') as f:
             self.dataset = [x.replace('\n','').replace('/','\\') for x in f.readlines()]
+
         random.shuffle(self.dataset)
 
     def __gaussian_blur_filter(self, std, k_size):
@@ -50,17 +51,27 @@ class DataGenerator:
 
     def gaussian_blur_2D(self, img):
         
-        return tf.nn.conv2d(img, self.gaussian_blur_kernel , strides=1, padding='SAME').numpy()
+        return tf.nn.conv2d(img, self.gaussian_blur_kernel , strides=1, padding='SAME')
 
     def downsampling(self, img, scale):
 
         _, old_h, old_w, _ = np.squeeze(np.shape(img)) 
         img = tf.image.resize(img, (old_h//scale , old_w//scale))
+
         return img
+
+    def random_crop(self, img):
+        ori_h, ori_w, _ = np.shape(img)
+        new_y = int(np.floor(np.random.uniform(ori_h-self.hr_image_size+1))) 
+        new_x = int(np.floor(np.random.uniform(ori_w-self.hr_image_size+1))) 
+
+        crop_img = img[new_y:new_y+self.hr_image_size, new_x:new_x+self.hr_image_size, :]
+
+        return crop_img
 
     def flip_img(self, img):
 
-        return np.flip(img,axis=1)
+        return tf.cast(tf.image.flip_left_right(img), tf.float32) 
 
     def __get_sample(self):
         return [random.randint(0,len(self.dataset)-1) for _ in range(self.batch_size)]
@@ -68,19 +79,17 @@ class DataGenerator:
     def read(self):
         cur_batch = self.__get_sample()
 
-        gt = tf.zeros([0, self.image_size[1], self.image_size[0], 3])
-        samples = tf.zeros([0, self.image_size[1]//self.scale, self.image_size[0]//self.scale, 3])
+        gt = tf.zeros([0, self.hr_image_size, self.hr_image_size, 3])
+        samples = tf.zeros([0, self.hr_image_size//self.scale, self.hr_image_size//self.scale, 3])
 
         for sample in cur_batch:
-            #讀取ground truth
             gt_image = cv2.imread(self.dataset_basepath + '\\sequences\\' + self.dataset[sample] + '\\im1.png')
-            print(self.dataset_basepath + '\\sequences\\' + self.dataset[sample] + '\\im1.png')
-            #下採樣
-            #lr_image = self.flip_img(gt_image) if random.uniform(0,1) > 0.5 else gt_image
-
+            gt_image = self.random_crop(gt_image)
+         
             gt_image = np.expand_dims(gt_image, axis=0)
             lr_image = np.expand_dims(gt_image, axis=0)
 
+            gt_image = self.flip_img(gt_image) if random.uniform(0,1) > 0.5 else gt_image
             lr_image = self.gaussian_blur_2D(gt_image) if random.uniform(0,1) > 0.5 else gt_image
             lr_image = self.downsampling(lr_image, self.scale)
             

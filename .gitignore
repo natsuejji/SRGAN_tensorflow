@@ -2,3 +2,5 @@
 *test*.py
 *.PNG
 *.jpg
+ckpt
+__pycache__
